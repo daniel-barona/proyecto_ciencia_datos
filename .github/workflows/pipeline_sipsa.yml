@@ -1,0 +1,33 @@
+name: Pipeline SIPSA Diario
+
+on:
+  schedule:
+    # 4:40 PM Colombia (UTC-5) = 21:40 UTC
+    - cron: '40 21 * * *'
+  workflow_dispatch: # Permitir ejecucion manual
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Ejecutar pipeline
+        run: python -m webapp.backend.pipeline
+
+      - name: Subir dataset actualizado
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Actualizacion automatica dataset SIPSA"
+          file_pattern: "webapp/backend/data/**"

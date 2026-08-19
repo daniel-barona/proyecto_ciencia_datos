@@ -1,2 +1,14 @@
 pytest
 ruff
+streamlit>=1.50.0
+pandas>=2.0.0
+openpyxl>=3.1
+requests>=2.31
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pyarrow>=14.0
+ydata-profiling>=4.18.4
+scipy>=1.16.1
+numpy>=2.3.2
+matplotlib>=3.10,<3.11
+seaborn>=0.13.2
