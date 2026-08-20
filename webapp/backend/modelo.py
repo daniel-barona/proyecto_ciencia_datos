@@ -15,6 +15,7 @@ Mantiene exactamente las 8 fases del notebook:
 
 from __future__ import annotations
 
+import gc
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -60,7 +61,7 @@ except ImportError:
     HAS_PMDARIMA = False
 
 
-# Constantes del modelo (mismas del notebook)
+# Constantes del modelo (mismas del notebook, optimizadas para deploy)
 
 M = 12
 TEST_SIZE = 12
@@ -71,15 +72,20 @@ UMBRAL_PLANITUD = 0.005
 UMBRAL_ESTACION = 0.004
 AMPLITUD_MINIMA = 0.01
 TOLERANCIA = 0.10
-N_ORIGENES = 6
+N_ORIGENES = 4  # reducido de 6 a 4 para ahorrar CPU
 
 TRUSTED_FILE = "SIPSA_2013_2026_trusted.parquet"
 
-FIT_KW = dict(enforce_stationarity=True, enforce_invertibility=True, maxiter=300, method='powell')
+FIT_KW = dict(enforce_stationarity=True, enforce_invertibility=True, maxiter=200, method='powell')
 
 
 
 # Fase dataclass
+
+def _cerrar_figuras(figs):
+    for f in figs:
+        plt.close(f)
+
 
 @dataclass
 class Fase:
@@ -300,7 +306,8 @@ def _sanear_sorder(sorder, D, m=12, seasonal=True):
 
 def _fit(ys, order, sorder, trend=None):
     return SARIMAX(
-        ys, order=order, seasonal_order=sorder, trend=trend, **FIT_KW
+        ys, order=order, seasonal_order=sorder, trend=trend,
+        **FIT_KW, low_memory=True
     ).fit(disp=False)
 
 
@@ -410,7 +417,8 @@ def _metricas(y_true, y_pred, denom):
 def make_sarimax_predictor(order, sorder, trend=None):
     def _p(y_hist, steps, want_full=False):
         ym = np.log(y_hist) if USE_LOG else y_hist
-        f = SARIMAX(ym, order=order, seasonal_order=sorder, trend=trend, **FIT_KW).fit(disp=False)
+        f = SARIMAX(ym, order=order, seasonal_order=sorder, trend=trend,
+                     **FIT_KW, low_memory=True).fit(disp=False)
         fc = f.get_forecast(steps=steps)
         try:
             var = np.asarray(fc.var_pred_mean, float)
@@ -627,7 +635,7 @@ def ejecutar_pipeline(
     # ================================================================
     f3 = Fase("Fase 3", "Exploracion, estacionariedad e identificacion (train)")
 
-    fig, ax = plt.subplots(3, 1, figsize=(11, 9))
+    fig, ax = plt.subplots(3, 1, figsize=(10, 7))
     y_train.plot(ax=ax[0], title='Serie de Train (nivel)')
     ax[0].grid(alpha=.3)
     np.log(y_train).plot(ax=ax[1], title='Serie de Train (log)')
@@ -688,7 +696,7 @@ def ejecutar_pipeline(
     lags = max(4, min(36, (n_eff // 2) - 1))
     f3.log(f'n efectivo tras diferenciar (train) = {n_eff} | lags = {lags}')
 
-    fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+    fig, ax = plt.subplots(1, 2, figsize=(10, 3.5))
     plot_acf(yd, lags=lags, ax=ax[0])
     plot_pacf(yd, lags=lags, method='ywm', ax=ax[1])
     plt.tight_layout()
@@ -727,7 +735,7 @@ def ejecutar_pipeline(
     f4.log(f'residuos utiles = {nr} | lags diagnostico = {lags_r}')
 
     if nr >= 8:
-        fig, ax = plt.subplots(2, 2, figsize=(11, 7))
+        fig, ax = plt.subplots(2, 2, figsize=(10, 6))
         resid.plot(ax=ax[0, 0], title='Residuos')
         ax[0, 0].grid(alpha=.3)
         ax[0, 1].hist(resid, bins=max(5, nr // 4))
@@ -808,6 +816,8 @@ def ejecutar_pipeline(
             resultados[nombre]['Estacion'] = np.nan
             resultados[nombre]['Tendencia'] = np.nan
         resultados[nombre]['Estacional'] = bool(CANDIDATOS[nombre]['sorder'][3] == m)
+
+    gc.collect()
 
     cols = ['MAE', 'RMSE', 'MAPE', 'sMAPE', 'MASE', 'Accuracy', 'Planitud', 'Estacion', 'Tendencia', 'Estacional']
     comparativa = pd.DataFrame(resultados).T[cols].sort_values('MASE')
@@ -917,7 +927,7 @@ def ejecutar_pipeline(
         except Exception as e:
             f6.log(f'{nombre}: fallo en walk-forward 1 paso ({e})')
 
-    fig, axc = plt.subplots(figsize=(11, 4.5))
+    fig, axc = plt.subplots(figsize=(10, 4))
     axc.plot(y_train.index[-24:], y_train.values[-24:], 'ko-', lw=1.5, alpha=.5,
              label='Train (ult. 24m)')
     axc.plot(y_test.index, y_test.values, 'ko-', lw=2, label='Real (test)')
@@ -956,7 +966,8 @@ def ejecutar_pipeline(
             f7.log(f'AVISO Fase 7: sin terminos estacionales -> forzado {order_final} {sorder_final} trend={TREND_FINAL}')
 
     def _ajustar(o, so, tr):
-        return SARIMAX(y_mod_full, order=o, seasonal_order=so, trend=tr, **FIT_KW).fit(disp=False)
+        return SARIMAX(y_mod_full, order=o, seasonal_order=so, trend=tr,
+                       **FIT_KW, low_memory=True).fit(disp=False)
 
     fit_full = _ajustar(order_final, sorder_final, TREND_FINAL)
 
@@ -1075,7 +1086,7 @@ def ejecutar_pipeline(
     f8.tabla("Pronostico detallado (valores numericos)", forecast_final.round(2))
     f8.tabla("Tabla de pronostico formateada", tabla_usuario)
 
-    fig, axf = plt.subplots(figsize=(12, 5))
+    fig, axf = plt.subplots(figsize=(10, 4.5))
     hist_plot = y.iloc[-min(len(y), 48):]
     axf.plot(hist_plot.index, hist_plot.values, 'o-', color='#1f77b4', label='Historico')
     axf.plot(
@@ -1097,6 +1108,8 @@ def ejecutar_pipeline(
     plt.tight_layout()
     f8.figura(fig)
     fases.append(f8)
+
+    gc.collect()
 
     # ================================================================
     # Construccion del resumen y payload del modelo

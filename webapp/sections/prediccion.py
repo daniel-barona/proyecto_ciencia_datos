@@ -1,3 +1,4 @@
+import gc
 import os
 import sys
 
@@ -11,13 +12,20 @@ if _BACKEND not in sys.path:
 from backend import modelo as mo
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def _cargar_datos():
     return mo.cargar_trusted()
 
 
+@st.cache_data(ttl=1800, show_spinner="Modelando... esto tarda ~30s")
+def _ejecutar_pipeline(_df_hash: str, producto: str, mercado):
+    df = _cargar_datos()
+    return mo.ejecutar_pipeline(df, producto, mercado)
+
+
 def _render_fase(fase):
     """Dibuja una fase completa: titulo, logs, tablas y figuras."""
+    import matplotlib.pyplot as _plt
     st.markdown(f"#### {fase.id} - {fase.titulo}")
     if fase.logs:
         st.code(fase.texto, language="text")
@@ -26,6 +34,7 @@ def _render_fase(fase):
         st.dataframe(df, use_container_width=True)
     for fig in fase.figuras:
         st.pyplot(fig, use_container_width=True)
+        _plt.close(fig)
     st.divider()
 
 
@@ -80,10 +89,11 @@ def render():
 
     st.divider()
 
+    df_hash = str(hash(df.shape[0]))
+
     if st.button("Generar prediccion", type="primary"):
         with st.spinner("Ejecutando el modelo... esto puede tardar un momento."):
             try:
-                # Verificar tamano de la serie antes de ejecutar
                 y_temp = mo.preparar_serie(df, producto, mercado)
                 n_obs = len(y_temp)
                 n_meses = (y_temp.index[-1].year - y_temp.index[0].year) * 12 + (y_temp.index[-1].month - y_temp.index[0].month) + 1
@@ -91,17 +101,18 @@ def render():
                     st.error(
                         f"La serie solo tiene **{n_obs} observaciones** ({n_meses} meses) "
                         f"de {y_temp.index[0]:%Y-%m} a {y_temp.index[-1]:%Y-%m}. "
-                        f"Se necesitan minimo 24 meses para modelar. "
-                        f"Intenta con otro producto o mercado con mas datos.",
+                        f"Se necesitan minimo 24 meses para modelar.",
                         icon="⚠️",
                     )
                     return
-                resultado = mo.ejecutar_pipeline(df, producto, mercado)
+                resultado = _ejecutar_pipeline(df_hash, producto, mercado)
                 st.session_state["pred_resultado"] = resultado
                 st.session_state["pred_ver_todo"] = False
             except Exception as e:
                 st.error(f"El modelo no pudo completarse: {e}", icon="🚫")
                 return
+            finally:
+                gc.collect()
 
     resultado = st.session_state.get("pred_resultado")
     if not resultado:
@@ -112,9 +123,6 @@ def render():
     fases = resultado["fases"]
     forecast = resultado["forecast"]
 
-    # =================================================================
-    # RESULTADO PRINCIPAL
-    # =================================================================
     st.subheader("Resultado del pronostico")
 
     m1, m2, m3, m4 = st.columns(4)
@@ -133,7 +141,6 @@ def render():
 
     st.divider()
 
-    # Tabla formateada del pronostico
     tabla_usuario = forecast[["Pronostico", "Cambio_$", "Cambio_%"]].copy()
     tabla_usuario["Pronostico"] = tabla_usuario["Pronostico"].apply(lambda x: f"${x:,.0f}")
     tabla_usuario["Cambio_$"] = tabla_usuario["Cambio_$"].apply(lambda x: f"{x:+,.0f}")
@@ -149,14 +156,12 @@ def render():
     st.caption(f"Pronostico de precios - proximos {mo.H_FUTURO} meses")
     st.dataframe(tabla_usuario, use_container_width=True)
 
-    # Grafica del pronostico (Fase 8)
+    import matplotlib.pyplot as _plt
     fase8 = fases[-1]
     for fig in fase8.figuras:
         st.pyplot(fig, use_container_width=True)
+        _plt.close(fig)
 
-    # =================================================================
-    # BOTON: Ver otros pasos del proceso
-    # =================================================================
     st.divider()
 
     if "pred_ver_todo" not in st.session_state:
