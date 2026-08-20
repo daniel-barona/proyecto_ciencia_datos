@@ -11,15 +11,13 @@ def render():
     st.markdown(
         """
         **La idea del algoritmo es la siguiente:**
-
-        1. El usuario debe seleccinar el departamento que desee estudiar, (puede escoger los departamentos disponibles, bogota esta incluido en la lista por el datset y Colombia tambien va a estar disponible si el usuario desea hacer un estudio a nivel nacional)
-        2. Despues de escoger el departamento (excluyendo bogota y colombia) el usuario podra escoger entre de las ciudades de ese departamento que pertenecen y que tienen activo centros de venta mayorista para poductos alimentarios.
-        3. Una vez escogido se le debe mostrar los productos disponibles en la ciudad.
-        4. el usuario escoge el producto a investigar.
-        5. Alli se empieza a realizar la estadistica, la idea es hacer selecion de todas las soliitudes realizadas por el usuario y realizar un problema de serie de tiempo
-        - Opcion A: usar los promedios mensuales por año (solicitud del cliente)
-        - Opcion B: recoletar todos los datos obtenidos de la solicitud de usuario por año
-        6. Debe realizar el analisis, presentar las graficas, presentar promedio de mes mensual actual (hasta junio) y dar la probabilidad del precio del producto en la cuidad seleccionada.
+        1.    El usuario debe seleccionar el departamento que desee estudiar. Puede escoger entre los departamentos disponibles; Bogotá está incluido en la lista debido al dataset, y Colombia también estará disponible si el usuario desea realizar un estudio a nivel nacional.
+        2.    Después de seleccionar el departamento, excluyendo Bogotá y Colombia, el usuario podrá escoger entre los municipios de ese departamento que cuentan con centros de venta mayorista activos para productos alimentarios.
+        3.    Una vez seleccionado el municipio, se le deben mostrar los productos disponibles en la ciudad.
+        4.    El usuario debe seleccionar el producto que desea investigar.
+        5.    Una vez seleccionado el producto, se comenzará a realizar fase por fase el procesamiento de manera interna, preparando los datos que posteriormente se deben presentar al usuario.
+        6.    Se debe realizar el análisis y mostrar al usuario el pronóstico de la predicción a 12 meses, presentando el comportamiento tanto en porcentaje como en precio, acompañado de una gráfica que facilite la interpretación y demostración de los resultados.
+        
         """
     )
 

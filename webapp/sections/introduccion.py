@@ -42,10 +42,11 @@ def render():
     st.subheader("Modelos predictivos ultizados")
     st.markdown(
             """
-            - **SARIMA:** Modelo que predice series de tiempo considerando tendencia, estacionalidad y autocorrelación. Es adecuado cuando los datos presentan patrones que se repiten periódicamente.
-            - **ARIMA (sin estacional):** Modelo que utiliza los valores pasados y los errores anteriores para realizar predicciones, sin considerar patrones estacionales.
-            - **ARIMA (Configuración):** Versión específica del modelo ARIMA cuyos parámetros fueron ajustados para adaptarse al comportamiento de la serie de tiempo y mejorar la precisión de las predicciones.
-            - **Naive estacional:** Variante del modelo Naive que predice el siguiente valor utilizando el observado en el mismo período de la temporada anterior (por ejemplo, el mismo mes del año pasado).
+                - **ARIMA** : modelo de series temporales utilizado para representar la dependencia entre las observaciones actuales y los valores y errores pasados. Se emplea para series que no presentan un componente estacional explícito.
+                - **SARIMA**: extensión del modelo ARIMA que incorpora componentes estacionales. En este estudio, al trabajar con datos de frecuencia mensual, se consideró una periodicidad estacional de 12 meses, permitiendo modelar patrones que se repiten anualmente.
+                - **Configuraciones ARIMA**: se evaluaron diferentes combinaciones de los parámetros p,d,q, incluyendo modelos automáticos y configuraciones específicas, con y sin deriva, con el fin de determinar la estructura que ofreciera el mejor ajuste para cada serie.
+                - **Configuraciones SARIMA**: se probaron diferentes combinaciones de los parámetros no estacionales (p,d,q) y estacionales (P,D,Q) , incluyendo modelos con y sin deriva. Esto permitió comparar distintas representaciones de la tendencia, autocorrelación y estacionalidad presentes en las series.
+                - **Naive estacional**: se puede utilizar como modelo de referencia o línea base, estimando el valor futuro a partir de la observación correspondiente al mismo periodo de la temporada anterior. Su inclusión permite determinar si los modelos ARIMA/SARIMA logran mejorar una estrategia de predicción sencilla.
             """
     )
 

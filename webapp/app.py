@@ -79,15 +79,15 @@ st.markdown(
 # ----------------------------------------------------------------------
 PAGINAS = {
     "Introducción": introduccion,
-    "Instrucciones": instrucciones,
     "EDA": eda,
+    "Instrucciones": instrucciones,
     "Predicción": prediccion,
 }
 
 ICONOS = {
     "Introducción": "🏠",
-    "Instrucciones": "📋",
     "EDA": "📊",
+    "Instrucciones": "📋",
     "Predicción": "🔮",
 }
 
