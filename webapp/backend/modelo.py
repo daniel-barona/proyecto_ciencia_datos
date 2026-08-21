@@ -10,7 +10,10 @@ Mantiene exactamente las 8 fases del notebook:
   Fase 5: Evaluacion en Test (backtest rolling-origin) + metricas
   Fase 6: Seleccion del modelo ganador y validacion visual
   Fase 7: Reentrenamiento con la serie completa
-  Fase 8: Pronostico a futuro
+  Fase 8: Pronostico a futuro + resumen final
+
+Optimizado para deploy: ajuste SARIMAX con lbfgs (rapido) y powell solo
+como reintento; STL/descomposiciones reutilizadas entre fases.
 """
 
 from __future__ import annotations
@@ -73,11 +76,15 @@ UMBRAL_PLANITUD = 0.005
 UMBRAL_ESTACION = 0.004
 AMPLITUD_MINIMA = 0.01
 TOLERANCIA = 0.10
-N_ORIGENES = 2  # reducido para ahorrar CPU
+N_ORIGENES = 1  # minimo para ahorrar CPU
 
 TRUSTED_FILE = "SIPSA_2013_2026_trusted.parquet"
 
-FIT_KW = dict(enforce_stationarity=True, enforce_invertibility=True, maxiter=200, method='powell')
+# Optimizacion: lbfgs converge mucho mas rapido que powell; powell queda
+# solo como reintento unico cuando lbfgs no entrega parametros finitos.
+FIT_KW = dict(enforce_stationarity=True, enforce_invertibility=True)
+MAXITER = 50
+MAXITER_FALLBACK = 100
 
 
 
@@ -311,11 +318,20 @@ def _sanear_sorder(sorder, D, m=12, seasonal=True):
     return (int(P), int(Dd), int(Q), int(s))
 
 
-def _fit(ys, order, sorder, trend=None):
+def _fit(ys, order, sorder, trend=None, maxiter=None):
+    mi = MAXITER if maxiter is None else int(maxiter)
+    kw = dict(FIT_KW, low_memory=True)
+    try:
+        f = SARIMAX(
+            ys, order=order, seasonal_order=sorder, trend=trend, **kw
+        ).fit(disp=False, maxiter=mi, method='lbfgs')
+        if np.all(np.isfinite(f.params)):
+            return f
+    except Exception:
+        pass
     return SARIMAX(
-        ys, order=order, seasonal_order=sorder, trend=trend,
-        **FIT_KW, low_memory=True
-    ).fit(disp=False)
+        ys, order=order, seasonal_order=sorder, trend=trend, **kw
+    ).fit(disp=False, maxiter=MAXITER_FALLBACK, method='powell')
 
 
 def modelo_estable(fit):
@@ -343,7 +359,7 @@ def ajustar_sarima(ys, info, d, D, m=12, verbose=True, fase=None):
                 start_p=0, start_q=0, start_P=0, start_Q=1,
                 max_p=min(1, max_p), max_q=min(1, max_q), max_P=min(1, max_P), max_Q=min(1, max_Q),
                 information_criterion='aicc',
-                stationary=False, stepwise=True, maxiter=50,
+                stationary=False, stepwise=True, maxiter=30,
                 suppress_warnings=True, error_action='ignore', trace=False,
             )
             order = mdl.order
@@ -379,15 +395,6 @@ def ajustar_sarima(ys, info, d, D, m=12, verbose=True, fase=None):
         order = (1, d, 0)
         sorder = _sanear_sorder((1, D, 0, m), D, m, seasonal)
 
-    try:
-        if not modelo_estable(_fit(ys, order, sorder)):
-            if fase is not None:
-                fase.log('Modelo inestable -> degradado a (0,d,1)(0,D,1)[m]')
-            order = (0, d, 1)
-            sorder = _sanear_sorder((0, D, 1, m), D, m, seasonal)
-    except Exception:
-        order = (0, d, 1)
-        sorder = _sanear_sorder((0, D, 1, m), D, m, seasonal)
     return order, sorder
 
 
@@ -422,12 +429,10 @@ def _metricas(y_true, y_pred, denom):
 
 
 def make_sarimax_predictor(order, sorder, trend=None, maxiter=None):
-    _m = maxiter if maxiter is not None else FIT_KW['maxiter']
+    _m = MAXITER if maxiter is None else int(maxiter)
     def _p(y_hist, steps, want_full=False):
         ym = np.log(y_hist) if USE_LOG else y_hist
-        kw = dict(FIT_KW, maxiter=_m)
-        f = SARIMAX(ym, order=order, seasonal_order=sorder, trend=trend,
-                     **kw, low_memory=True).fit(disp=False)
+        f = _fit(ym, order, sorder, trend, maxiter=_m)
         fc = f.get_forecast(steps=steps)
         try:
             var = np.asarray(fc.var_pred_mean, float)
@@ -563,6 +568,30 @@ def guardar_modelo(resultado: dict, ruta="modelo_final.pkl") -> Optional[str]:
     return ruta
 
 
+def _figura_resumen(y, forecast_final, producto, mercado_label, ganador,
+                    mase_g, acc_g, h_futuro):
+    """Grafica sintetica para encabezar el resumen final (Fase 8)."""
+    fig, ax = plt.subplots(figsize=(10, 4.5))
+    hist_plot = y.iloc[-min(len(y), 48):]
+    ax.plot(hist_plot.index, hist_plot.values, 'o-', color='#1f77b4', label='Historico')
+    ax.plot(forecast_final.index, forecast_final['Pronostico'], 's--',
+            color='#16a34a', label=f'Pronostico {h_futuro}m ({ganador})')
+    ax.fill_between(
+        forecast_final.index, forecast_final['IC_95_Lo'], forecast_final['IC_95_Hi'],
+        color='#16a34a', alpha=.15, label='IC 95%'
+    )
+    ax.axvline(y.index[-1], color='gray', ls=':', lw=1)
+    ax.set_title(
+        f'{producto} - {mercado_label}  |  {ganador}  '
+        f'(MASE={mase_g:.2f}, Accuracy={acc_g:.1f}%)'
+    )
+    ax.set_ylabel('Precio por kg')
+    ax.legend()
+    ax.grid(alpha=.3)
+    plt.tight_layout()
+    return fig
+
+
 # ======================================================================
 # Pipeline completo - 8 fases exactas del notebook
 # ======================================================================
@@ -574,7 +603,7 @@ def ejecutar_pipeline(
     test_size: int = TEST_SIZE,
     h_futuro: int = H_FUTURO,
     n_origenes: int = N_ORIGENES,
-    backtest_maxiter: int = 50,
+    backtest_maxiter: int = 30,
 ) -> dict:
     fases: list[Fase] = []
     mercado_label = 'Colombia (promedio nacional)' if mercado is None else mercado
@@ -638,6 +667,7 @@ def ejecutar_pipeline(
     f2.log(f"  Fuerza tendencia  Ft : {info['Ft']}  ({'con tendencia' if info['tendencia_ok'] else 'sin tendencia clara'})")
     f2.log(f"  Bloque estacional    : {'SI (P,D,Q,12)' if info['seasonal_ok'] else 'NO (menos de 2 ciclos)'}")
     f2.log(f"  Limites busqueda     : p<={info['max_p']} q<={info['max_q']} P<={info['max_P']} Q<={info['max_Q']} (max {info['presupuesto']} params)")
+    f2.log(f"  Horizonte backtest   : {info['h_bt']} meses")
     fases.append(f2)
 
     # ================================================================
@@ -734,6 +764,11 @@ def ejecutar_pipeline(
         f4.log(f'AVISO: modelo sin terminos estacionales -> corregido a seasonal_order={seasonal_order}')
 
     fit_train = _fit(y_mod_train, order, seasonal_order)
+    if not modelo_estable(fit_train):
+        f4.log('Modelo inestable -> degradado a (0,d,1) con bloque estacional (0,D,1)')
+        order = (0, D_ORDER, 1)
+        seasonal_order = _sanear_sorder((0, D_SEAS, 1, m), D_SEAS, m, bool(info['seasonal_ok']))
+        fit_train = _fit(y_mod_train, order, seasonal_order)
     f4.log(f'Modelo estable (raices AR fuera del circulo): {modelo_estable(fit_train)}')
 
     resid = pd.Series(fit_train.resid).replace([np.inf, -np.inf], np.nan).dropna()
@@ -785,9 +820,7 @@ def ejecutar_pipeline(
     if info['seasonal_ok']:
         CANDIDATOS['SARIMA auto'] = dict(kind='sarimax', order=order, sorder=S(*seasonal_order[:3]), trend=None)
         CANDIDATOS['SARIMA(0,1,1)(0,1,1)[12] + deriva'] = dict(kind='sarimax', order=(0, 1, 1), sorder=S(0, 1, 1), trend='t')
-        CANDIDATOS['SARIMA(1,1,1)(0,1,1)[12] + deriva'] = dict(kind='sarimax', order=(1, 1, 1), sorder=S(0, 1, 1), trend='t')
     CANDIDATOS['ARIMA auto (control)'] = dict(kind='sarimax', order=order_ns, sorder=(0, 0, 0, 0), trend=None)
-    CANDIDATOS['ARIMA(1,1,1) + deriva'] = dict(kind='sarimax', order=(1, 1, 1), sorder=(0, 0, 0, 0), trend='t')
 
     REFERENCIAS = {'Naive estacional': make_snaive(m), 'Deriva (12m)': make_drift(12)}
 
@@ -796,21 +829,24 @@ def ejecutar_pipeline(
     resultados, perfiles, curvas_test, detalles = {}, {}, {}, {}
     for nombre, pred_fn in PREDICTORES.items():
         try:
-            glob, perfil, det, _tray = backtest_rolling(
+            glob, perfil, det, tray = backtest_rolling(
                 y, pred_fn, H_EVAL, MIN_TRAIN, max_origenes=n_origenes, m=m
             )
             resultados[nombre] = glob
             perfiles[nombre] = perfil
             detalles[nombre] = det
+            curvas_test[nombre] = list(tray.values())[-1] if tray else None
         except Exception as e:
             f5.log(f'{nombre}: fallo en backtest ({e})')
             continue
         try:
-            curva = np.asarray(pred_fn(y_train, H_TEST), float)
-            curvas_test[nombre] = curva
-            resultados[nombre]['Planitud'] = planitud(curva)
-            resultados[nombre]['Estacion'] = amplitud_estacional_pred(curva, m)
-            resultados[nombre]['Tendencia'] = pendiente_rel(curva)
+            ultima_tray = curvas_test[nombre]
+            if ultima_tray is not None:
+                resultados[nombre]['Planitud'] = planitud(ultima_tray.values)
+                resultados[nombre]['Estacion'] = amplitud_estacional_pred(ultima_tray.values, m)
+                resultados[nombre]['Tendencia'] = pendiente_rel(ultima_tray.values)
+            else:
+                raise ValueError
         except Exception:
             resultados[nombre]['Planitud'] = np.nan
             resultados[nombre]['Estacion'] = np.nan
@@ -923,8 +959,8 @@ def ejecutar_pipeline(
     axc.plot(y_train.index[-24:], y_train.values[-24:], 'ko-', lw=1.5, alpha=.5,
              label='Train (ult. 24m)')
     axc.plot(y_test.index, y_test.values, 'ko-', lw=2, label='Real (test)')
-    if GANADOR in curvas_test:
-        axc.plot(y_test.index, curvas_test[GANADOR], '--s', ms=4, alpha=.85, label=GANADOR)
+    if GANADOR in curvas_test and curvas_test[GANADOR] is not None:
+        axc.plot(curvas_test[GANADOR].index, curvas_test[GANADOR].values, '--s', ms=4, alpha=.85, label=GANADOR)
     for nombre, pred_fn in REFERENCIAS.items():
         try:
             ref_pred = np.asarray(pred_fn(y_train, len(y_test)), float)
@@ -945,7 +981,7 @@ def ejecutar_pipeline(
     f7 = Fase("Fase 7", "Reentrenamiento con la serie completa")
 
     y_mod_full = np.log(y) if USE_LOG else y.copy()
-    info_full = verificar_registros(y, m=m)
+    info_full = info_full_ref  # ya calculado en la Fase 2 (evita otro STL robusto)
 
     order_final, sorder_final, TREND_FINAL = (
         spec_g['order'], spec_g['sorder'], spec_g.get('trend')
@@ -963,8 +999,7 @@ def ejecutar_pipeline(
             f7.log(f'AVISO Fase 7: sin terminos estacionales -> forzado {order_final} {sorder_final} trend={TREND_FINAL}')
 
     def _ajustar(o, so, tr):
-        return SARIMAX(y_mod_full, order=o, seasonal_order=so, trend=tr,
-                       **FIT_KW, low_memory=True).fit(disp=False)
+        return _fit(y_mod_full, o, so, tr)
 
     fit_full = _ajustar(order_final, sorder_final, TREND_FINAL)
 
@@ -1039,7 +1074,22 @@ def ejecutar_pipeline(
     f8.log(f'Producto: {producto}  |  Mercado: {mercado_label}')
     f8.log(f'Precio actual: ${float(y.iloc[-1]):,.0f}/kg')
 
+    lo_h, hi_h = float(y.min()) * 0.4, float(y.max()) * 2.5
+    fuera_rango = forecast_final[
+        (forecast_final['Pronostico'] < lo_h) | (forecast_final['Pronostico'] > hi_h)
+    ]
+    f8.log(
+        'Fuera de rango plausible: '
+        + ('ninguno (OK)' if fuera_rango.empty
+           else ', '.join(fuera_rango.index.strftime('%Y-%m')))
+    )
+
     f8.tabla("Pronostico", tabla_usuario)
+
+    tabla_detalle = forecast_final[['Pronostico', 'IC_95_Lo', 'IC_95_Hi']].copy()
+    tabla_detalle.index = tabla_detalle.index.strftime('%Y-%m')
+    tabla_detalle.columns = ['Pronostico ($/kg)', 'IC 95% inferior', 'IC 95% superior']
+    f8.tabla('Pronostico detallado con intervalos', tabla_detalle.round(2))
 
     fig, axf = plt.subplots(figsize=(10, 4.5))
     hist_plot = y.iloc[-min(len(y), 48):]
@@ -1059,6 +1109,41 @@ def ejecutar_pipeline(
     axf.grid(alpha=.3)
     plt.tight_layout()
     f8.figura(fig)
+    f8.figura(_figura_resumen(
+        y, forecast_final, producto, mercado_label, GANADOR, mase_g, acc_g, h_futuro
+    ))
+
+    f8.log('')
+    f8.log('=' * 60)
+    f8.log('RESUMEN DE RESULTADOS')
+    f8.log('=' * 60)
+    f8.log(
+        f'Serie                  : {producto} en {mercado_label} '
+        f'(n={len(y)} meses, {len(y) / m:.1f} ciclos)'
+    )
+    f8.log(f'Train / Test           : {len(y_train)} / {len(y_test)} meses')
+    f8.log(
+        f'Estacionalidad         : Fs={info["Fs"]} -> '
+        + ('usada' if info['seasonal_ok'] else 'NO usada (senal debil)')
+    )
+    f8.log(
+        f'Modelo ganador         : {GANADOR} '
+        f'(order={spec_g["order"]}, seasonal={spec_g["sorder"]})'
+    )
+    f8.log(
+        f'Metricas test          : MASE={mase_g:.3f} | Accuracy={acc_g:.1f}% | '
+        f'MAE={float(comparativa.loc[GANADOR, "MAE"]):,.1f}'
+    )
+    f8.log(f'Ultimo observado {y.index[-1]:%Y-%m} : ${float(y.iloc[-1]):,.2f}/kg')
+    f8.log(
+        f'Pronostico {forecast_final.index[0]:%Y-%m}       : '
+        f'${punto[0]:,.2f} [${lo[0]:,.2f} ; ${hi[0]:,.2f}]'
+    )
+    f8.log(
+        f'Pronostico a {h_futuro} meses ({forecast_final.index[-1]:%Y-%m}) : '
+        f'${punto[-1]:,.2f}/kg'
+    )
+    f8.log('=' * 60)
     fases.append(f8)
 
     gc.collect()

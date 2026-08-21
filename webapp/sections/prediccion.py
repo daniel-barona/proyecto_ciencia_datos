@@ -17,7 +17,7 @@ def _cargar_datos():
     return mo.cargar_trusted()
 
 
-@st.cache_data(ttl=1800, show_spinner="Modelando... esto puede tardar ~30s")
+@st.cache_data(ttl=1800, show_spinner="Modelando... esto puede tardar unos segundos")
 def _ejecutar_pipeline(_df_hash: str, producto: str, mercado, _v: int = 4):
     df = _cargar_datos()
     res = mo.ejecutar_pipeline(df, producto, mercado)
