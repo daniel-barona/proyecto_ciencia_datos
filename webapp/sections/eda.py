@@ -530,15 +530,3 @@ def render():
     st.write(resultado)
 
     st.text("Presenciamos las variables que mejor se conectan con nuestra variable objetivo pero entendiendo que el problema es de serie de tiempo, no pondremos cuidado a las estadisticas de año y mes ademas de ser variables que fueron separadas")
-
-    
-
-
-
-
-
-
-
-
-
-

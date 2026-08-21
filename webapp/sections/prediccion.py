@@ -18,7 +18,7 @@ def _cargar_datos():
 
 
 @st.cache_data(ttl=1800, show_spinner="Modelando... esto tarda ~30s")
-def _ejecutar_pipeline(_df_hash: str, producto: str, mercado):
+def _ejecutar_pipeline(_df_hash: str, producto: str, mercado, _v: int = 3):
     df = _cargar_datos()
     return mo.ejecutar_pipeline(df, producto, mercado)
 
@@ -33,8 +33,11 @@ def _render_fase(fase):
         st.caption(titulo)
         st.dataframe(df, use_container_width=True)
     for fig in fase.figuras:
-        st.pyplot(fig, use_container_width=True)
-        _plt.close(fig)
+        if isinstance(fig, bytes):
+            st.image(fig, use_container_width=True)
+        else:
+            st.pyplot(fig, use_container_width=True)
+            _plt.close(fig)
     st.divider()
 
 
@@ -89,7 +92,7 @@ def render():
 
     st.divider()
 
-    df_hash = str(hash(df.shape[0]))
+    df_hash = f"{df.shape[0]}_{df['fecha'].max().timestamp()}"
 
     if st.button("Generar prediccion", type="primary"):
         with st.spinner("Ejecutando el modelo... esto puede tardar un momento."):
@@ -105,7 +108,7 @@ def render():
                         icon="⚠️",
                     )
                     return
-                resultado = _ejecutar_pipeline(df_hash, producto, mercado)
+                resultado = _ejecutar_pipeline(df_hash, producto, mercado, 3)
                 st.session_state["pred_resultado"] = resultado
                 st.session_state["pred_ver_todo"] = False
             except Exception as e:
@@ -159,8 +162,11 @@ def render():
     import matplotlib.pyplot as _plt
     fase8 = fases[-1]
     for fig in fase8.figuras:
-        st.pyplot(fig, use_container_width=True)
-        _plt.close(fig)
+        if isinstance(fig, bytes):
+            st.image(fig, use_container_width=True)
+        else:
+            st.pyplot(fig, use_container_width=True)
+            _plt.close(fig)
 
     st.divider()
 

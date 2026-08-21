@@ -16,6 +16,7 @@ Mantiene exactamente las 8 fases del notebook:
 from __future__ import annotations
 
 import gc
+import io
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -72,7 +73,7 @@ UMBRAL_PLANITUD = 0.005
 UMBRAL_ESTACION = 0.004
 AMPLITUD_MINIMA = 0.01
 TOLERANCIA = 0.10
-N_ORIGENES = 4  # reducido de 6 a 4 para ahorrar CPU
+N_ORIGENES = 3  # reducido de 6 para ahorrar CPU
 
 TRUSTED_FILE = "SIPSA_2013_2026_trusted.parquet"
 
@@ -81,10 +82,6 @@ FIT_KW = dict(enforce_stationarity=True, enforce_invertibility=True, maxiter=200
 
 
 # Fase dataclass
-
-def _cerrar_figuras(figs):
-    for f in figs:
-        plt.close(f)
 
 
 @dataclass
@@ -102,7 +99,11 @@ class Fase:
         self.tablas.append((titulo, df))
 
     def figura(self, fig) -> None:
-        self.figuras.append(fig)
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        self.figuras.append(buf.getvalue())
 
     @property
     def texto(self) -> str:
@@ -414,11 +415,13 @@ def _metricas(y_true, y_pred, denom):
     )
 
 
-def make_sarimax_predictor(order, sorder, trend=None):
+def make_sarimax_predictor(order, sorder, trend=None, maxiter=None):
+    _m = maxiter if maxiter is not None else FIT_KW['maxiter']
     def _p(y_hist, steps, want_full=False):
         ym = np.log(y_hist) if USE_LOG else y_hist
+        kw = dict(FIT_KW, maxiter=_m)
         f = SARIMAX(ym, order=order, seasonal_order=sorder, trend=trend,
-                     **FIT_KW, low_memory=True).fit(disp=False)
+                     **kw, low_memory=True).fit(disp=False)
         fc = f.get_forecast(steps=steps)
         try:
             var = np.asarray(fc.var_pred_mean, float)
@@ -519,10 +522,10 @@ def pendiente_rel(pred):
     return float(m_ * (len(p) - 1) / max(1e-9, np.mean(np.abs(p))))
 
 
-def construir_predictor(spec):
+def construir_predictor(spec, maxiter=None):
     k = spec['kind']
     if k == 'sarimax':
-        return make_sarimax_predictor(spec['order'], spec['sorder'], spec.get('trend'))
+        return make_sarimax_predictor(spec['order'], spec['sorder'], spec.get('trend'), maxiter=maxiter)
     if k == 'snaive':
         return make_snaive(M)
     if k == 'drift':
@@ -565,6 +568,7 @@ def ejecutar_pipeline(
     test_size: int = TEST_SIZE,
     h_futuro: int = H_FUTURO,
     n_origenes: int = N_ORIGENES,
+    backtest_maxiter: int = 100,
 ) -> dict:
     fases: list[Fase] = []
     mercado_label = 'Colombia (promedio nacional)' if mercado is None else mercado
@@ -641,15 +645,14 @@ def ejecutar_pipeline(
     np.log(y_train).plot(ax=ax[1], title='Serie de Train (log)')
     ax[1].grid(alpha=.3)
     if len(y_train) >= 2 * m:
-        seasonal_decompose(y_train, model='additive', period=m).seasonal.plot(
-            ax=ax[2], title='Estacionalidad'
-        )
+        decomp = seasonal_decompose(y_train, model='additive', period=m)
+        decomp.seasonal.plot(ax=ax[2], title='Estacionalidad')
         ax[2].grid(alpha=.3)
     plt.tight_layout()
     f3.figura(fig)
 
     if len(y_train) >= 2 * m:
-        est = seasonal_decompose(y_train, model='additive', period=m).seasonal
+        est = decomp.seasonal
         f3.log(
             f'Amplitud estacional = {est.max() - est.min():,.1f} '
             f'({(est.max() - est.min()) / y_train.mean() * 100:.1f}% del nivel medio)'
@@ -780,18 +783,12 @@ def ejecutar_pipeline(
         CANDIDATOS['SARIMA(0,1,1)(0,1,1)[12] + deriva'] = dict(kind='sarimax', order=(0, 1, 1), sorder=S(0, 1, 1), trend='t')
         CANDIDATOS['SARIMA(1,1,1)(0,1,1)[12] + deriva'] = dict(kind='sarimax', order=(1, 1, 1), sorder=S(0, 1, 1), trend='t')
         CANDIDATOS['SARIMA(1,1,0)(1,1,0)[12]'] = dict(kind='sarimax', order=(1, 1, 0), sorder=S(1, 1, 0), trend=None)
-        CANDIDATOS['SARIMA(1,1,1)(1,0,1)[12] + deriva'] = dict(kind='sarimax', order=(1, 1, 1), sorder=S(1, 0, 1), trend='t')
-        CANDIDATOS['SARIMA(0,1,1)(1,0,0)[12] + deriva'] = dict(kind='sarimax', order=(0, 1, 1), sorder=S(1, 0, 0), trend='t')
-        CANDIDATOS['SARIMA(0,1,1)(1,1,1)[12] + deriva'] = dict(kind='sarimax', order=(0, 1, 1), sorder=S(1, 1, 1), trend='t')
-        CANDIDATOS['SARIMA(1,1,1)(1,1,1)[12]'] = dict(kind='sarimax', order=(1, 1, 1), sorder=S(1, 1, 1), trend=None)
-        CANDIDATOS['SARIMA(0,1,1)(1,1,0)[12]'] = dict(kind='sarimax', order=(0, 1, 1), sorder=S(1, 1, 0), trend=None)
-        CANDIDATOS['SARIMA(1,1,0)(0,1,1)[12] + deriva'] = dict(kind='sarimax', order=(1, 1, 0), sorder=S(0, 1, 1), trend='t')
     CANDIDATOS['ARIMA auto (control, sin estacional)'] = dict(kind='sarimax', order=order_ns, sorder=(0, 0, 0, 0), trend=None)
     CANDIDATOS['ARIMA(1,1,1) + deriva (control)'] = dict(kind='sarimax', order=(1, 1, 1), sorder=(0, 0, 0, 0), trend='t')
 
     REFERENCIAS = {'Naive estacional': make_snaive(m), 'Deriva (12m)': make_drift(12)}
 
-    PREDICTORES = {n: construir_predictor(s) for n, s in CANDIDATOS.items()}
+    PREDICTORES = {n: construir_predictor(s, maxiter=backtest_maxiter) for n, s in CANDIDATOS.items()}
 
     resultados, perfiles, curvas_test, detalles = {}, {}, {}, {}
     for nombre, pred_fn in PREDICTORES.items():
@@ -1038,70 +1035,25 @@ def ejecutar_pipeline(
     tabla_usuario['Cambio_$'] = tabla_usuario['Cambio_$'].apply(lambda x: f'{x:+,.0f}')
     tabla_usuario['Cambio_%'] = tabla_usuario['Cambio_%'].apply(lambda x: f'{x:+.2f}%')
 
-    lo_h, hi_h = y.min() * 0.4, y.max() * 2.5
-    fuera_rango = forecast_final[
-        (forecast_final['Pronostico'] < lo_h) | (forecast_final['Pronostico'] > hi_h)
-    ]
-
-    f8.log(f'PRONOSTICO {h_futuro} MESES  |  modelo: {GANADOR}  |  trend={TREND_FINAL}')
+    f8.log(f'PRONOSTICO {h_futuro} MESES  |  modelo: {GANADOR}')
     f8.log(f'Producto: {producto}  |  Mercado: {mercado_label}')
-    f8.log(f'Precio actual (ultimo dato): ${float(y.iloc[-1]):,.0f}/kg')
-    f8.log('')
-    f8.log('Tabla de pronostico:')
-    for idx_row, row in forecast_final.iterrows():
-        f8.log(
-            f'  {idx_row:%Y-%m}: ${row["Pronostico"]:,.0f}  '
-            f'[{row["IC_95_Lo"]:,.0f} ; {row["IC_95_Hi"]:,.0f}]  '
-            f'({row["Cambio_%"]:+.2f}%)'
-        )
-    f8.log('')
-    f8.log(
-        'Fuera de rango plausible: '
-        + ('ninguno OK' if fuera_rango.empty
-           else str(fuera_rango.index.strftime('%Y-%m').tolist()))
-    )
+    f8.log(f'Precio actual: ${float(y.iloc[-1]):,.0f}/kg')
 
-    var_pred = planitud(punto)
-    f8.log(
-        f'\nVariacion del pronostico = {var_pred * 100:.2f}% del nivel '
-        f'(serie real ultimos 24m = {mov_real * 100:.2f}%)'
-    )
-    if var_pred < UMBRAL_PLANITUD:
-        f8.log(
-            'ATENCION: el pronostico sigue siendo practicamente plano. Con esta serie el modelo '
-            'no encuentra senal de trayectoria; usa el IC 95% como rango de decision.'
-        )
-    else:
-        f8.log('OK: el pronostico tiene trayectoria (no es constante).')
-    amp_pred = amplitud_estacional_pred(punto, m)
-    pen_pred = pendiente_rel(punto)
-    f8.log(f'Forma anual del pronostico  = {amp_pred * 100:.2f}% del nivel')
-    f8.log(f'Tendencia del pronostico    = {pen_pred * 100:+.2f}% en {h_futuro} meses')
-    if sorder_final[3] == m and amp_pred < 0.004:
-        f8.log(
-            'NOTA: el bloque estacional esta activo pero su amplitud estimada es pequena '
-            'en esta serie (la senal anual es debil frente al nivel).'
-        )
-
-    f8.tabla("Pronostico detallado (valores numericos)", forecast_final.round(2))
-    f8.tabla("Tabla de pronostico formateada", tabla_usuario)
+    f8.tabla("Pronostico", tabla_usuario)
 
     fig, axf = plt.subplots(figsize=(10, 4.5))
     hist_plot = y.iloc[-min(len(y), 48):]
     axf.plot(hist_plot.index, hist_plot.values, 'o-', color='#1f77b4', label='Historico')
     axf.plot(
         forecast_final.index, forecast_final['Pronostico'], 's--', color='#d62728',
-        label=f'Pronostico {h_futuro}m ({GANADOR})'
+        label=f'Pronostico {h_futuro}m'
     )
     axf.fill_between(
         forecast_final.index, forecast_final['IC_95_Lo'], forecast_final['IC_95_Hi'],
         color='#d62728', alpha=.15, label='IC 95%'
     )
     axf.axvline(y.index[-1], color='gray', ls=':', lw=1)
-    axf.set_title(
-        f'{producto} - {mercado_label}  |  proximos {h_futuro} meses  |  {GANADOR}  '
-        f'(MASE test={mase_g:.2f}, Accuracy test={acc_g:.1f}%)'
-    )
+    axf.set_title(f'{producto} - {mercado_label}  |  proximos {h_futuro} meses')
     axf.set_ylabel('Precio por kg')
     axf.legend()
     axf.grid(alpha=.3)
