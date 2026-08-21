@@ -16,7 +16,7 @@ def render():
         3.    Una vez seleccionado el municipio, se le deben mostrar los productos disponibles en la ciudad.
         4.    El usuario debe seleccionar el producto que desea investigar.
         5.    Una vez seleccionado el producto, se comenzará a realizar fase por fase el procesamiento de manera interna, preparando los datos que posteriormente se deben presentar al usuario.
-        6.    Se debe realizar el análisis y mostrar al usuario el pronóstico de la predicción a 12 meses, presentando el comportamiento tanto en porcentaje como en precio, acompañado de una gráfica que facilite la interpretación y demostración de los resultados.
+        6.    Se debe realizar el análisis y mostrar al usuario el pronóstico de la predicción a 12 meses, presentando el comportamiento tanto en porcentaje como en precio.
         
         """
     )

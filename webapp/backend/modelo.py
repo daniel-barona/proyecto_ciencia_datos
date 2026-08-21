@@ -73,7 +73,7 @@ UMBRAL_PLANITUD = 0.005
 UMBRAL_ESTACION = 0.004
 AMPLITUD_MINIMA = 0.01
 TOLERANCIA = 0.10
-N_ORIGENES = 3  # reducido de 6 para ahorrar CPU
+N_ORIGENES = 2  # reducido para ahorrar CPU
 
 TRUSTED_FILE = "SIPSA_2013_2026_trusted.parquet"
 
@@ -186,11 +186,11 @@ def preparar_serie(df, producto, mercado=None):
     return serie['precio']
 
 
-def fuerza_estacional(y, m=12):
+def fuerza_estacional(y, m=12, stl_res=None):
     if len(y) < 2 * m + 1:
         return np.nan
     try:
-        res = STL(y, period=m, robust=True).fit()
+        res = stl_res if stl_res is not None else STL(y, period=m, robust=True).fit()
     except Exception:
         return np.nan
     var_r = np.nanvar(res.resid)
@@ -198,11 +198,11 @@ def fuerza_estacional(y, m=12):
     return float(max(0.0, 1 - var_r / var_rs)) if var_rs > 0 else 0.0
 
 
-def fuerza_tendencia(y, m=12):
+def fuerza_tendencia(y, m=12, stl_res=None):
     if len(y) < 2 * m + 1:
         return np.nan
     try:
-        res = STL(y, period=m, robust=True).fit()
+        res = stl_res if stl_res is not None else STL(y, period=m, robust=True).fit()
     except Exception:
         return np.nan
     var_r = np.nanvar(res.resid)
@@ -216,8 +216,14 @@ def verificar_registros(y, m=12, etiqueta=''):
     nivel = ('INSUFICIENTE' if n < 24 else 'MINIMO' if n < 36 else
              'ACEPTABLE' if n < 48 else 'BUENO' if n < 72 else 'OPTIMO')
 
-    Fs = fuerza_estacional(y, m)
-    Ft = fuerza_tendencia(y, m)
+    stl_res = None
+    if len(y) >= 2 * m + 1:
+        try:
+            stl_res = STL(y, period=m, robust=True).fit()
+        except Exception:
+            stl_res = None
+    Fs = fuerza_estacional(y, m, stl_res=stl_res)
+    Ft = fuerza_tendencia(y, m, stl_res=stl_res)
     seasonal_ok = bool(n >= 2 * m + 1)
     seasonal_fuerte = bool(seasonal_ok and np.isfinite(Fs) and Fs >= 0.30)
     tendencia_ok = bool(np.isfinite(Ft) and Ft >= 0.30)
@@ -335,9 +341,9 @@ def ajustar_sarima(ys, info, d, D, m=12, verbose=True, fase=None):
                 ys, seasonal=seasonal, m=m if seasonal else 1,
                 d=d, D=D if seasonal else 0,
                 start_p=0, start_q=0, start_P=0, start_Q=1,
-                max_p=max_p, max_q=max_q, max_P=max_P, max_Q=max_Q,
+                max_p=min(1, max_p), max_q=min(1, max_q), max_P=min(1, max_P), max_Q=min(1, max_Q),
                 information_criterion='aicc',
-                stationary=False, stepwise=True,
+                stationary=False, stepwise=True, maxiter=50,
                 suppress_warnings=True, error_action='ignore', trace=False,
             )
             order = mdl.order
@@ -568,7 +574,7 @@ def ejecutar_pipeline(
     test_size: int = TEST_SIZE,
     h_futuro: int = H_FUTURO,
     n_origenes: int = N_ORIGENES,
-    backtest_maxiter: int = 100,
+    backtest_maxiter: int = 50,
 ) -> dict:
     fases: list[Fase] = []
     mercado_label = 'Colombia (promedio nacional)' if mercado is None else mercado
@@ -778,13 +784,10 @@ def ejecutar_pipeline(
     CANDIDATOS = {}
     if info['seasonal_ok']:
         CANDIDATOS['SARIMA auto'] = dict(kind='sarimax', order=order, sorder=S(*seasonal_order[:3]), trend=None)
-        CANDIDATOS['SARIMA auto + deriva'] = dict(kind='sarimax', order=order, sorder=S(*seasonal_order[:3]), trend=TREND_DERIVA)
-        CANDIDATOS['SARIMA(0,1,1)(0,1,1)[12]'] = dict(kind='sarimax', order=(0, 1, 1), sorder=S(0, 1, 1), trend=None)
         CANDIDATOS['SARIMA(0,1,1)(0,1,1)[12] + deriva'] = dict(kind='sarimax', order=(0, 1, 1), sorder=S(0, 1, 1), trend='t')
         CANDIDATOS['SARIMA(1,1,1)(0,1,1)[12] + deriva'] = dict(kind='sarimax', order=(1, 1, 1), sorder=S(0, 1, 1), trend='t')
-        CANDIDATOS['SARIMA(1,1,0)(1,1,0)[12]'] = dict(kind='sarimax', order=(1, 1, 0), sorder=S(1, 1, 0), trend=None)
-    CANDIDATOS['ARIMA auto (control, sin estacional)'] = dict(kind='sarimax', order=order_ns, sorder=(0, 0, 0, 0), trend=None)
-    CANDIDATOS['ARIMA(1,1,1) + deriva (control)'] = dict(kind='sarimax', order=(1, 1, 1), sorder=(0, 0, 0, 0), trend='t')
+    CANDIDATOS['ARIMA auto (control)'] = dict(kind='sarimax', order=order_ns, sorder=(0, 0, 0, 0), trend=None)
+    CANDIDATOS['ARIMA(1,1,1) + deriva'] = dict(kind='sarimax', order=(1, 1, 1), sorder=(0, 0, 0, 0), trend='t')
 
     REFERENCIAS = {'Naive estacional': make_snaive(m), 'Deriva (12m)': make_drift(12)}
 
@@ -916,23 +919,20 @@ def ejecutar_pipeline(
     if planos:
         f6.log('Variantes descartadas por pronostico plano: ' + ', '.join(planos))
 
-    n_train_wf = len(y_train)
-    curvas_walkforward = {GANADOR: backtest_walkforward_1paso(y, n_train_wf, PREDICTORES[GANADOR])}
-    for nombre, pred_fn in REFERENCIAS.items():
-        try:
-            curvas_walkforward[nombre] = backtest_walkforward_1paso(y, n_train_wf, pred_fn)
-        except Exception as e:
-            f6.log(f'{nombre}: fallo en walk-forward 1 paso ({e})')
-
     fig, axc = plt.subplots(figsize=(10, 4))
     axc.plot(y_train.index[-24:], y_train.values[-24:], 'ko-', lw=1.5, alpha=.5,
              label='Train (ult. 24m)')
     axc.plot(y_test.index, y_test.values, 'ko-', lw=2, label='Real (test)')
-    for nom, pred in curvas_walkforward.items():
-        estilo = '--s' if nom == GANADOR else ':'
-        axc.plot(y_test.index, pred, estilo, ms=4, alpha=.85, label=nom)
+    if GANADOR in curvas_test:
+        axc.plot(y_test.index, curvas_test[GANADOR], '--s', ms=4, alpha=.85, label=GANADOR)
+    for nombre, pred_fn in REFERENCIAS.items():
+        try:
+            ref_pred = np.asarray(pred_fn(y_train, len(y_test)), float)
+            axc.plot(y_test.index, ref_pred, ':', ms=3, alpha=.6, label=nombre)
+        except Exception:
+            pass
     axc.axvline(y_train.index[-1], color='gray', ls=':', lw=1)
-    axc.set_title(f'Validacion walk-forward (1 paso adelante) -- modelo ganador: {GANADOR}')
+    axc.set_title(f'Validacion en test -- modelo ganador: {GANADOR}')
     axc.legend(fontsize=8)
     axc.grid(alpha=.3)
     plt.tight_layout()

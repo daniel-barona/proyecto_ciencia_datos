@@ -17,28 +17,14 @@ def _cargar_datos():
     return mo.cargar_trusted()
 
 
-@st.cache_data(ttl=1800, show_spinner="Modelando... esto tarda ~30s")
-def _ejecutar_pipeline(_df_hash: str, producto: str, mercado, _v: int = 3):
+@st.cache_data(ttl=1800, show_spinner="Modelando... esto puede tardar ~30s")
+def _ejecutar_pipeline(_df_hash: str, producto: str, mercado, _v: int = 4):
     df = _cargar_datos()
-    return mo.ejecutar_pipeline(df, producto, mercado)
-
-
-def _render_fase(fase):
-    """Dibuja una fase completa: titulo, logs, tablas y figuras."""
-    import matplotlib.pyplot as _plt
-    st.markdown(f"#### {fase.id} - {fase.titulo}")
-    if fase.logs:
-        st.code(fase.texto, language="text")
-    for titulo, df in fase.tablas:
-        st.caption(titulo)
-        st.dataframe(df, use_container_width=True)
-    for fig in fase.figuras:
-        if isinstance(fig, bytes):
-            st.image(fig, use_container_width=True)
-        else:
-            st.pyplot(fig, use_container_width=True)
-            _plt.close(fig)
-    st.divider()
+    res = mo.ejecutar_pipeline(df, producto, mercado)
+    return dict(
+        resumen=res["resumen"],
+        forecast=res["forecast"],
+    )
 
 
 def render():
@@ -99,18 +85,16 @@ def render():
             try:
                 y_temp = mo.preparar_serie(df, producto, mercado)
                 n_obs = len(y_temp)
-                n_meses = (y_temp.index[-1].year - y_temp.index[0].year) * 12 + (y_temp.index[-1].month - y_temp.index[0].month) + 1
                 if n_obs < 24:
                     st.error(
-                        f"La serie solo tiene **{n_obs} observaciones** ({n_meses} meses) "
+                        f"La serie solo tiene **{n_obs} observaciones** "
                         f"de {y_temp.index[0]:%Y-%m} a {y_temp.index[-1]:%Y-%m}. "
                         f"Se necesitan minimo 24 meses para modelar.",
                         icon="⚠️",
                     )
                     return
-                resultado = _ejecutar_pipeline(df_hash, producto, mercado, 3)
+                resultado = _ejecutar_pipeline(df_hash, producto, mercado, 4)
                 st.session_state["pred_resultado"] = resultado
-                st.session_state["pred_ver_todo"] = False
             except Exception as e:
                 st.error(f"El modelo no pudo completarse: {e}", icon="🚫")
                 return
@@ -123,7 +107,6 @@ def render():
         return
 
     resumen = resultado["resumen"]
-    fases = resultado["fases"]
     forecast = resultado["forecast"]
 
     st.subheader("Resultado del pronostico")
@@ -158,30 +141,3 @@ def render():
 
     st.caption(f"Pronostico de precios - proximos {mo.H_FUTURO} meses")
     st.dataframe(tabla_usuario, use_container_width=True)
-
-    import matplotlib.pyplot as _plt
-    fase8 = fases[-1]
-    for fig in fase8.figuras:
-        if isinstance(fig, bytes):
-            st.image(fig, use_container_width=True)
-        else:
-            st.pyplot(fig, use_container_width=True)
-            _plt.close(fig)
-
-    st.divider()
-
-    if "pred_ver_todo" not in st.session_state:
-        st.session_state["pred_ver_todo"] = False
-
-    if not st.session_state["pred_ver_todo"]:
-        if st.button("Ver los otros pasos del proceso"):
-            st.session_state["pred_ver_todo"] = True
-            st.rerun()
-    else:
-        if st.button("Ocultar los pasos intermedios"):
-            st.session_state["pred_ver_todo"] = False
-            st.rerun()
-
-        st.markdown("### Proceso completo del modelo (Fases 1 -> 8)")
-        for fase in fases:
-            _render_fase(fase)
