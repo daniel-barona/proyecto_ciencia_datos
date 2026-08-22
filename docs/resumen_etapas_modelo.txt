@@ -1,0 +1,123 @@
+======================================================================
+ RESUMEN DEL PIPELINE DE PREDICCION SIPSA (SARIMA/ARIMA)
+ Archivo: webapp/backend/modelo.py  |  Proyecto: proyecto_ciencia_datos
+======================================================================
+
+El motor de prediccion ejecuta un proceso de 8 fases que replica el
+notebook original, adaptado para la aplicacion Streamlit. Cada fase
+captura sus salidas (logs, tablas y figuras) en objetos "Fase" que la
+UI muestra bajo demanda.
+
+----------------------------------------------------------------------
+FASE 1 - CREACION DE LA SERIE
+----------------------------------------------------------------------
+- Filtra el dataset trusted por producto y mercado (o promedio nacional
+  si mercado = None).
+- Construye la serie mensual de "precio_promedio_kg" con frecuencia
+  mensual fija (MS), interpolando huecos linealmente.
+- Salidas: log de rango temporal, tabla de la serie, n observaciones.
+
+----------------------------------------------------------------------
+FASE 2 - VERIFICACION DE LA SERIE Y DIVISION TRAIN / TEST
+----------------------------------------------------------------------
+- Cuenta registros y ciclos estacionales (m = 12) y asigna nivel de
+  calidad: INSUFICIENTE / MINIMO / ACEPTABLE / BUENO / OPTIMO.
+- Mide fuerza estacional (Fs) y fuerza de tendencia (Ft) con STL
+  robusto; define si se usa bloque estacional (P,D,Q,12).
+- Fija limites de busqueda (max p, q, P, Q y presupuesto de parametros)
+  y el horizonte de backtest.
+- Division cronologica: train (~151 meses) y test (12 meses), sin
+  mezclar el orden temporal.
+- Salidas: logs de verificacion, figura Train/Test.
+
+----------------------------------------------------------------------
+FASE 3 - EXPLORACION, ESTACIONARIEDAD E IDENTIFICACION (TRAIN)
+----------------------------------------------------------------------
+- Graficas de la serie en nivel, en log y componente estacional.
+- Deteccion de valores atipicos mes a mes (z-score robusto con mediana
+  y MAD) en train y aviso si el test tiene choques.
+- Tests de estacionariedad ADF y KPSS sobre nivel, d=1 y D=1.
+- Estimacion de diferenciaciones d (regular) y D (estacional) con
+  ndiffs/nsdiffs de pmdarima (o regla ADF si no esta disponible).
+- Correlogramas ACF/PACF de la serie diferenciada; alerta de posible
+  sobre-diferenciacion estacional si ACF(lag 12) < -0.35.
+- Salidas: figuras de exploracion y ACF/PACF, logs de tests.
+
+----------------------------------------------------------------------
+FASE 4 - ESTIMACION DEL MODELO Y DIAGNOSTICO DE RESIDUOS
+----------------------------------------------------------------------
+- Seleccion de ordenes con auto_arima (AICc, stepwise) o grid search
+  propio respetando los limites de la Fase 2.
+- Ajuste SARIMAX sobre train (log de la serie), optimizador lbfgs
+  rapido con reintento Powell solo si falla.
+- Verificacion de estabilidad: raices AR fuera del circulo unitario;
+  si es inestable se degrada a (0,d,1)(0,D,1)[12].
+- Diagnostico de residuos: grafica, histograma, ACF y Q-Q; tests de
+  Ljung-Box (ruido blanco) y Jarque-Bera (normalidad).
+- Salidas: ordenes elegidas, figura 2x2 de diagnostico, logs.
+
+----------------------------------------------------------------------
+FASE 5 - EVALUACION EN TEST (BACKTEST ROLLING-ORIGIN) + METRICAS
+----------------------------------------------------------------------
+- Candidatos: SARIMA auto, SARIMA(0,1,1)(0,1,1)[12] + deriva y ARIMA
+  auto (control sin estacionalidad).
+- Referencias: naive estacional y deriva (12m).
+- Backtest rolling-origin sobre el test midiendo MAE, RMSE, MAPE,
+  sMAPE, MASE y Accuracy.
+- Metricas de forma del pronostico: Planitud (variacion total),
+  Estacion (forma anual) y Tendencia (pendiente relativa).
+- Salidas: tabla comparativa, perfil de MASE por horizonte.
+
+----------------------------------------------------------------------
+FASE 6 - SELECCION DEL MODELO GANADOR Y VALIDACION VISUAL
+----------------------------------------------------------------------
+- Descarta variantes con pronostico plano/degenerado.
+- Dentro de una tolerancia del 10% en MASE prefiere modelos que
+  modelan estacionalidad y tendencia.
+- Si el ganador tiene amplitud estacional casi nula, lo reemplaza por
+  una variante estacional cercana.
+- Veredicto segun MASE: <0.8 aporta valor claro; <1.0 mejora marginal;
+  >=1.0 no supera al naive.
+- Salida: grafica de validacion (real vs pronosticado en test).
+
+----------------------------------------------------------------------
+FASE 7 - REENTRENAMIENTO CON LA SERIE COMPLETA
+----------------------------------------------------------------------
+- Reajusta la especificacion ganadora con TODA la serie (train + test).
+- Si el modelo queda inestable, cae al fallback estacional
+  (0,1,1)(0,1,1)[12] con deriva.
+- Salidas: logs con ordenes finales y periodo estacional usado.
+
+----------------------------------------------------------------------
+FASE 8 - PRONOSTICO A FUTURO + RESUMEN FINAL
+----------------------------------------------------------------------
+- Pronostico de 12 meses con intervalos de confianza al 95%.
+- Tabla para el usuario: Pronostico, Cambio_$ y Cambio_% mes a mes.
+- Chequeo de sanidad: alerta si algun valor sale del rango plausible
+  (entre 40% del minimo y 250% del maximo historico).
+- Tabla detallada con limites IC 95% inferior/superior.
+- Bloque RESUMEN DE RESULTADOS: serie, train/test, estacionalidad,
+  modelo ganador, metricas, ultimo observado y pronosticos clave.
+- Figuras: grafica historico + pronostico con banda IC y figura
+  sintetica de resumen.
+
+----------------------------------------------------------------------
+OPTIMIZACIONES DE RENDIMIENTO APLICADAS
+----------------------------------------------------------------------
+- Optimizador SARIMAX cambiado de Powell (lento) a lbfgs con maxiter
+  50; Powell queda solo como reintento si lbfgs no converge.
+- STL robusto calculado una sola vez y reutilizado entre fases.
+- Sin ajustes duplicados: la estabilidad se verifica sobre el fit ya
+  existente de la Fase 4.
+- Resultado del benchmark (serie nacional, tomate de arbol, 163 obs):
+  * Version anterior : 7.2 s  (MASE 1.132)
+  * Version actual   : 4.6 s  (MASE 0.974)
+  * Serie por mercado (Medellin-CAM): 2.9 s, MASE 0.428,
+    Accuracy 97.8%.
+
+----------------------------------------------------------------------
+FLUJO DE DATOS
+----------------------------------------------------------------------
+landing/raw -> limpieza -> trusted (parquet) -> modelo.py -> UI Streamlit
+                              (backend/data/trusted)   (sections/prediccion.py)
+======================================================================
