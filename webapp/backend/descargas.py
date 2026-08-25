@@ -7,6 +7,7 @@ Descarga el archivo SIPSA del anio en curso desde el DANE y prepara la capa
 from __future__ import annotations
 
 import shutil
+import time
 from pathlib import Path
 
 import requests
@@ -14,27 +15,72 @@ import requests
 from . import config
 from .utils import listar_excels, log, titulo, vaciar_carpeta
 
+# El sitio del DANE usa un WAF que bloquea peticiones de bots y de IPs de
+# nube (como los runners de GitHub Actions), por lo que se envian cabeceras
+# de navegador y se reintenta varias veces antes de rendirse.
+CABECERAS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    ),
+    "Accept": "*/*",
+    "Referer": "https://www.dane.gov.co/",
+}
+
+INTENTOS = 4
+PAUSA_SEGUNDOS = 30
+
+# Tamano minimo razonable para el Excel real; respuestas atrapadas por el
+# WAF suelen ser paginas de error muy pequenas.
+TAMANO_MINIMO_BYTES = 100_000
+
+
+def _descargar_a(url: str, destino_temporal: Path) -> None:
+    respuesta = requests.get(url, stream=True, timeout=120, headers=CABECERAS)
+    respuesta.raise_for_status()
+    with open(destino_temporal, "wb") as archivo:
+        for bloque in respuesta.iter_content(chunk_size=8192):
+            if bloque:
+                archivo.write(bloque)
+    if destino_temporal.stat().st_size < TAMANO_MINIMO_BYTES:
+        raise ValueError(
+            f"Respuesta sospechosamente pequena ({destino_temporal.stat().st_size} bytes)"
+        )
+
 
 def descargar_anio_actual(url: str | None = None, forzar: bool = True) -> Path:
-    """Descarga el Excel del anio en curso a ``data/Descargas``."""
+    """Descarga el Excel del anio en curso a ``data/Descargas``.
+
+    La descarga va primero a un archivo temporal y el destino solo se
+    reemplaza al final si todo salio bien, para conservar la copia previa
+    cuando el servidor falla o bloquea la peticion.
+    """
     config.crear_carpetas()
     url = url or config.URL_ANIO_ACTUAL
     destino = config.DESCARGAS_DIR / Path(url).name
 
-    if destino.exists():
-        if not forzar:
-            log(f"Ya existe (no se descarga de nuevo): {destino.name}")
-            return destino
-        destino.unlink()
-        log(f"Archivo previo eliminado: {destino.name}")
+    if destino.exists() and not forzar:
+        log(f"Ya existe (no se descarga de nuevo): {destino.name}")
+        return destino
 
     titulo(f"Descargando {destino.name}")
-    respuesta = requests.get(url, stream=True, timeout=120)
-    respuesta.raise_for_status()
-    with open(destino, "wb") as archivo:
-        for bloque in respuesta.iter_content(chunk_size=8192):
-            if bloque:
-                archivo.write(bloque)
+    temporal = destino.with_name(destino.name + ".part")
+
+    for intento in range(1, INTENTOS + 1):
+        try:
+            _descargar_a(url, temporal)
+            break
+        except Exception as error:
+            temporal.unlink(missing_ok=True)
+            log(f"Intento {intento}/{INTENTOS} fallo: {error}")
+            if intento == INTENTOS:
+                raise
+            log(f"Reintento en {PAUSA_SEGUNDOS} s...")
+            time.sleep(PAUSA_SEGUNDOS)
+
+    if destino.exists():
+        log(f"Reemplazando copia previa: {destino.name}")
+    temporal.replace(destino)
 
     log(f"Descarga completada: {destino}")
     return destino
@@ -75,9 +121,9 @@ def ejecutar(descargar: bool = True) -> list[str]:
     if descargar:
         try:
             descargar_anio_actual()
-        except Exception as error:  # la fuente puede estar caida
+        except Exception as error:  # la fuente puede estar caida o bloquear
             log(f"No se pudo descargar el archivo del anio en curso: {error}")
-            log("Se continua con los archivos ya presentes en data/Descargas.")
+            log("Se continua con la copia previa en data/Descargas.")
     copiar_a_raw()
     return inventario_raw()
 
