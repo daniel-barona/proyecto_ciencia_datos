@@ -2,8 +2,8 @@ name: Pipeline SIPSA Diario
 
 on:
   schedule:
-    # 4:40 PM Colombia (UTC-5) = 21:40 UTC
-    - cron: '40 21 * * *'
+    # Dias 9, 10, 11 y 12 de cada mes a la 1:00 (UTC)
+    - cron: '0 1 9-12 * *'
   workflow_dispatch: # Permitir ejecucion manual
 
 jobs:

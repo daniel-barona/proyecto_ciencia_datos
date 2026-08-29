@@ -1108,7 +1108,6 @@ def ejecutar_pipeline(
     axf.legend()
     axf.grid(alpha=.3)
     plt.tight_layout()
-    f8.figura(fig)
     f8.figura(_figura_resumen(
         y, forecast_final, producto, mercado_label, GANADOR, mase_g, acc_g, h_futuro
     ))

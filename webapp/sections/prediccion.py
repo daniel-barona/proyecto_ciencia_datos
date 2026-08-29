@@ -24,6 +24,7 @@ def _ejecutar_pipeline(_df_hash: str, producto: str, mercado, _v: int = 4):
     return dict(
         resumen=res["resumen"],
         forecast=res["forecast"],
+        fases=res["fases"],
     )
 
 
@@ -141,3 +142,8 @@ def render():
 
     st.caption(f"Pronostico de precios - proximos {mo.H_FUTURO} meses")
     st.dataframe(tabla_usuario, use_container_width=True)
+
+    for fase in resultado["fases"]:
+        if fase.id == "Fase 8" and fase.figuras:
+            st.image(fase.figuras[0], use_container_width=True)
+            break
