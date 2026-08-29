@@ -29,12 +29,12 @@ st.markdown(
         .app-title {
             font-size: 2.4rem;
             font-weight: 800;
-            color: #F5F5F0;
+            color: var(--primary-color);
             margin-bottom: 0.2rem;
         }
         .app-subtitle {
             font-size: 1.05rem;
-            color: #F5F5F0;
+            color: var(--text-color);
             margin-top: 0;
         }
 

@@ -84,7 +84,7 @@ TRUSTED_FILE = "SIPSA_2013_2026_trusted.parquet"
 # solo como reintento unico cuando lbfgs no entrega parametros finitos.
 FIT_KW = dict(enforce_stationarity=True, enforce_invertibility=True)
 MAXITER = 50
-MAXITER_FALLBACK = 100
+MAXITER_FALLBACK = 50
 
 
 
@@ -359,7 +359,7 @@ def ajustar_sarima(ys, info, d, D, m=12, verbose=True, fase=None):
                 start_p=0, start_q=0, start_P=0, start_Q=1,
                 max_p=min(1, max_p), max_q=min(1, max_q), max_P=min(1, max_P), max_Q=min(1, max_Q),
                 information_criterion='aicc',
-                stationary=False, stepwise=True, maxiter=30,
+                stationary=False, stepwise=True, maxiter=20,
                 suppress_warnings=True, error_action='ignore', trace=False,
             )
             order = mdl.order
