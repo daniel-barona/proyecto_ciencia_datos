@@ -320,7 +320,7 @@ def _sanear_sorder(sorder, D, m=12, seasonal=True):
 
 def _fit(ys, order, sorder, trend=None, maxiter=None):
     mi = MAXITER if maxiter is None else int(maxiter)
-    kw = dict(FIT_KW, low_memory=True)
+    kw = dict(FIT_KW)
     try:
         f = SARIMAX(
             ys, order=order, seasonal_order=sorder, trend=trend, **kw
