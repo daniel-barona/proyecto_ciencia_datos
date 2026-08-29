@@ -359,7 +359,7 @@ def ajustar_sarima(ys, info, d, D, m=12, verbose=True, fase=None):
                 start_p=0, start_q=0, start_P=0, start_Q=1,
                 max_p=min(1, max_p), max_q=min(1, max_q), max_P=min(1, max_P), max_Q=min(1, max_Q),
                 information_criterion='aicc',
-                stationary=False, stepwise=True, maxiter=20,
+                stationary=False, stepwise=True, maxiter=12,
                 suppress_warnings=True, error_action='ignore', trace=False,
             )
             order = mdl.order
@@ -604,6 +604,7 @@ def ejecutar_pipeline(
     h_futuro: int = H_FUTURO,
     n_origenes: int = N_ORIGENES,
     backtest_maxiter: int = 30,
+    figuras_detalle: bool = True,
 ) -> dict:
     fases: list[Fase] = []
     mercado_label = 'Colombia (promedio nacional)' if mercado is None else mercado
@@ -654,7 +655,8 @@ def ejecutar_pipeline(
     ax.legend()
     ax.grid(alpha=.3)
     plt.tight_layout()
-    f2.figura(fig)
+    if figuras_detalle:
+        f2.figura(fig)
 
     f2.log('')
     f2.log('--- Train (rige la busqueda de ordenes; el test queda fuera para no filtrarlo) ---')
@@ -685,7 +687,8 @@ def ejecutar_pipeline(
         decomp.seasonal.plot(ax=ax[2], title='Estacionalidad')
         ax[2].grid(alpha=.3)
     plt.tight_layout()
-    f3.figura(fig)
+    if figuras_detalle:
+        f3.figura(fig)
 
     if len(y_train) >= 2 * m:
         est = decomp.seasonal
@@ -739,7 +742,8 @@ def ejecutar_pipeline(
     plot_acf(yd, lags=lags, ax=ax[0])
     plot_pacf(yd, lags=lags, method='ywm', ax=ax[1])
     plt.tight_layout()
-    f3.figura(fig)
+    if figuras_detalle:
+        f3.figura(fig)
 
     if len(yd) > m:
         acf_m = pd.Series(yd).autocorr(lag=m)
@@ -788,7 +792,8 @@ def ejecutar_pipeline(
         qqplot(resid, line='s', ax=ax[1, 1])
         ax[1, 1].set_title('Q-Q')
         plt.tight_layout()
-        f4.figura(fig)
+        if figuras_detalle:
+            f4.figura(fig)
         lb = acorr_ljungbox(resid, lags=[max(1, min(lags_r, 10))], return_df=True)
         f4.log(f'  Ljung-Box p={lb["lb_pvalue"].iloc[0]:.4f}')
         f4.log(f'  Ruido blanco (p>0.05): {bool(lb["lb_pvalue"].iloc[0] > 0.05)}')
@@ -972,7 +977,8 @@ def ejecutar_pipeline(
     axc.legend(fontsize=8)
     axc.grid(alpha=.3)
     plt.tight_layout()
-    f6.figura(fig)
+    if figuras_detalle:
+        f6.figura(fig)
     fases.append(f6)
 
     # ================================================================
@@ -1011,7 +1017,7 @@ def ejecutar_pipeline(
             order_final, sorder_final, TREND_FINAL = (0, 1, 1), (0, 0, 0, 0), 't'
         fit_full = _ajustar(order_final, sorder_final, TREND_FINAL)
 
-    predictor_final = make_sarimax_predictor(order_final, sorder_final, TREND_FINAL)
+    predictor_final = None  # el pronostico de la Fase 8 usa directamente fit_full
 
     f7.log(
         f'Reentrenado "{GANADOR}" con la serie completa ({len(y)} meses): '
@@ -1031,8 +1037,21 @@ def ejecutar_pipeline(
         y.index[-1] + pd.offsets.MonthBegin(1), periods=h_futuro, freq='MS'
     )
 
-    punto, lo, hi, _obj = predictor_final(y, h_futuro, want_full=True)
+    # Reutiliza directamente el modelo ya reentrenado en la Fase 7 (fit_full),
+    # evitando un ajuste SARIMAX adicional que no cambiaria el resultado.
+    fc = fit_full.get_forecast(steps=h_futuro)
+    try:
+        _var = np.asarray(fc.var_pred_mean, float)
+    except Exception:
+        _var = None
+    punto = _inv_log(fc.predicted_mean.values, _var, USE_LOG)
     punto = np.asarray(punto, float)
+    try:
+        _ci = fc.conf_int(alpha=0.05)
+        lo = np.exp(_ci.iloc[:, 0].values) if USE_LOG else _ci.iloc[:, 0].values
+        hi = np.exp(_ci.iloc[:, 1].values) if USE_LOG else _ci.iloc[:, 1].values
+    except Exception:
+        lo = hi = None
 
     if lo is None or hi is None:
         perf = perfil_horizonte[GANADOR] if GANADOR in perfil_horizonte else None

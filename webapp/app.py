@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 
 
 from sections import introduccion, instrucciones, eda, prediccion
@@ -16,14 +15,15 @@ st.set_page_config(
 
 # ----------------------------------------------------------------------
 # Estilos personalizados
+# (usan variables nativas de Streamlit para adaptarse al tema claro/oscuro)
 # ----------------------------------------------------------------------
 st.markdown(
     """
     <style>
         /* Paleta de la app */
         :root {
-            --primary: #16a34a;
-            --primary-dark: #15803d;
+            --primary: var(--primary-color);
+            --primary-dark: var(--primary-color);
         }
 
         /* Titulo principal */
@@ -43,12 +43,13 @@ st.markdown(
         .sidebar-header {
             font-size: 1.25rem;
             font-weight: 700;
-            color: #14532d;
+            color: var(--primary-color);
             margin-bottom: 0.25rem;
         }
         .sidebar-caption {
             font-size: 0.85rem;
-            color: #6b7280;
+            color: var(--text-color);
+            opacity: 0.7;
             margin-bottom: 1rem;
         }
 
@@ -57,46 +58,21 @@ st.markdown(
             width: 100%;
             text-align: left;
             border-radius: 10px;
-            border: 1px solid #e5e7eb;
-            background-color: #ffffff;
-            color: #14532d;
+            border: 1px solid var(--secondary-background-color);
+            background-color: var(--secondary-background-color);
+            color: var(--text-color);
             font-weight: 600;
             padding: 0.6rem 0.9rem;
             margin-bottom: 0.4rem;
             transition: all 0.15s ease-in-out;
         }
         div[data-testid="stSidebar"] .stButton > button:hover {
-            border-color: var(--primary);
-            background-color: #f0fdf4;
-            color: var(--primary-dark);
+            border-color: var(--primary-color);
+            color: var(--primary-color);
         }
     </style>
     """,
     unsafe_allow_html=True,
-)
-
-# ----------------------------------------------------------------------
-# Forzar inicio en tema claro (solo una vez por pestaña)
-# ----------------------------------------------------------------------
-components.html(
-    """
-    <script>
-        const FORCE_KEY = '_sipsa_forzado_claro';
-        if (!sessionStorage.getItem(FORCE_KEY)) {
-            const THEME_KEY = 'stActiveTheme-' + window.location.pathname + '-v2';
-            const actual = localStorage.getItem(THEME_KEY);
-            const tema = actual ? JSON.parse(actual) : null;
-            if (tema !== 'Light') {
-                localStorage.setItem(THEME_KEY, JSON.stringify('Light'));
-                sessionStorage.setItem(FORCE_KEY, '1');
-                window.top.location.reload();
-            } else {
-                sessionStorage.setItem(FORCE_KEY, '1');
-            }
-        }
-    </script>
-    """,
-    height=0,
 )
 
 # ----------------------------------------------------------------------
@@ -141,10 +117,7 @@ with st.sidebar:
 # ----------------------------------------------------------------------
 # Encabezado principal
 # ----------------------------------------------------------------------
-st.markdown(
-    '<div class="app-title">Modelo de Predicción SIPSA</div>',
-    unsafe_allow_html=True,
-)
+st.markdown('<div class="app-title">Modelo de Predicción SIPSA</div>', unsafe_allow_html=True)
 st.markdown(
     '<p class="app-subtitle">Trabajo para el diplomado de ciencia de datos '
     "- Daniel Andres Barona Sandoval</p>",
@@ -152,9 +125,9 @@ st.markdown(
 )
 
 st.info(
-            "Usa el menú lateral para navegar entre las diferentes secciones de la aplicación.",
-            icon="💡",
-        )
+    "Usa el menú lateral para navegar entre las diferentes secciones de la aplicación.",
+    icon="💡",
+)
 
 st.divider()
 # ----------------------------------------------------------------------

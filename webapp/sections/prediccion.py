@@ -20,7 +20,9 @@ def _cargar_datos():
 @st.cache_data(ttl=43200, show_spinner="Modelando... esto puede tardar unos segundos")
 def _ejecutar_pipeline(_df_hash: str, producto: str, mercado, _v: int = 4):
     df = _cargar_datos()
-    res = mo.ejecutar_pipeline(df, producto, mercado)
+    res = mo.ejecutar_pipeline(
+        df, producto, mercado, figuras_detalle=False
+    )
     return dict(
         resumen=res["resumen"],
         forecast=res["forecast"],
