@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 from sections import introduccion, instrucciones, eda, prediccion
@@ -75,6 +76,30 @@ st.markdown(
 )
 
 # ----------------------------------------------------------------------
+# Forzar inicio en tema claro (solo una vez por pestaña)
+# ----------------------------------------------------------------------
+components.html(
+    """
+    <script>
+        const FORCE_KEY = '_sipsa_forzado_claro';
+        if (!sessionStorage.getItem(FORCE_KEY)) {
+            const THEME_KEY = 'stActiveTheme-' + window.location.pathname + '-v2';
+            const actual = localStorage.getItem(THEME_KEY);
+            const tema = actual ? JSON.parse(actual) : null;
+            if (tema !== 'Light') {
+                localStorage.setItem(THEME_KEY, JSON.stringify('Light'));
+                sessionStorage.setItem(FORCE_KEY, '1');
+                window.top.location.reload();
+            } else {
+                sessionStorage.setItem(FORCE_KEY, '1');
+            }
+        }
+    </script>
+    """,
+    height=0,
+)
+
+# ----------------------------------------------------------------------
 # Estado de navegacion
 # ----------------------------------------------------------------------
 PAGINAS = {
@@ -129,7 +154,7 @@ st.markdown(
 st.info(
             "Usa el menú lateral para navegar entre las diferentes secciones de la aplicación.",
             icon="💡",
-)
+        )
 
 st.divider()
 # ----------------------------------------------------------------------
