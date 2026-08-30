@@ -15,15 +15,14 @@ st.set_page_config(
 
 # ----------------------------------------------------------------------
 # Estilos personalizados
-# (usan variables nativas de Streamlit para adaptarse al tema claro/oscuro)
 # ----------------------------------------------------------------------
 st.markdown(
     """
     <style>
         /* Paleta de la app */
         :root {
-            --primary: var(--primary-color);
-            --primary-dark: var(--primary-color);
+            --primary: #16a34a;
+            --primary-dark: #15803d;
         }
 
         /* Titulo principal */
@@ -43,13 +42,12 @@ st.markdown(
         .sidebar-header {
             font-size: 1.25rem;
             font-weight: 700;
-            color: var(--primary-color);
+            color: #14532d;
             margin-bottom: 0.25rem;
         }
         .sidebar-caption {
             font-size: 0.85rem;
-            color: var(--text-color);
-            opacity: 0.7;
+            color: #6b7280;
             margin-bottom: 1rem;
         }
 
@@ -58,17 +56,18 @@ st.markdown(
             width: 100%;
             text-align: left;
             border-radius: 10px;
-            border: 1px solid var(--secondary-background-color);
-            background-color: var(--secondary-background-color);
-            color: var(--text-color);
+            border: 1px solid #e5e7eb;
+            background-color: #ffffff;
+            color: #14532d;
             font-weight: 600;
             padding: 0.6rem 0.9rem;
             margin-bottom: 0.4rem;
             transition: all 0.15s ease-in-out;
         }
         div[data-testid="stSidebar"] .stButton > button:hover {
-            border-color: var(--primary-color);
-            color: var(--primary-color);
+            border-color: var(--primary);
+            background-color: #f0fdf4;
+            color: var(--primary-dark);
         }
     </style>
     """,
@@ -117,7 +116,10 @@ with st.sidebar:
 # ----------------------------------------------------------------------
 # Encabezado principal
 # ----------------------------------------------------------------------
-st.markdown('<div class="app-title">Modelo de Predicción SIPSA</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="app-title">Modelo de Predicción SIPSA</div>',
+    unsafe_allow_html=True,
+)
 st.markdown(
     '<p class="app-subtitle">Trabajo para el diplomado de ciencia de datos '
     "- Daniel Andres Barona Sandoval</p>",
@@ -125,9 +127,14 @@ st.markdown(
 )
 
 st.info(
-    "Usa el menú lateral para navegar entre las diferentes secciones de la aplicación.",
-    icon="💡",
-)
+            "Usa el menú lateral para navegar entre las diferentes secciones de la aplicación.",
+            icon="💡",
+        )
+st.success(
+            "Puedes cambiar el tema (claro u oscuro) desde el menú de la esquina "
+            "superior derecha sobre los 3 puntos",
+            icon="🎨",
+        )
 
 st.divider()
 # ----------------------------------------------------------------------
