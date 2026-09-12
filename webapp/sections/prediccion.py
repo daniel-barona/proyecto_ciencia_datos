@@ -31,17 +31,17 @@ def _ejecutar_pipeline(_df_hash: str, producto: str, mercado, _v: int = 4):
 
 
 def render():
-    st.header("Prediccion")
+    st.header("Predicción")
     st.write(
-        "Selecciona la ubicacion y el producto para ejecutar el modelo SARIMA/ARIMA "
-        "sobre la serie historica del SIPSA y obtener el pronostico de precios."
+        "Selecciona la ubicación y el producto para ejecutar el modelo SARIMA/ARIMA "
+        "sobre la serie histórica del SIPSA y obtener el pronóstico de precios."
     )
 
     try:
         df = _cargar_datos()
     except FileNotFoundError as e:
         st.warning(
-            "No se encontro la capa **trusted** de datos. Ejecuta primero el "
+            "No se encontró la capa **trusted** de datos. Ejecuta primero el "
             "backend local para generar `SIPSA_2013_2026_trusted.xlsx`.",
             icon="⚠️",
         )
@@ -57,7 +57,7 @@ def render():
         departamento = st.selectbox(
             "Departamento",
             mo.opciones_departamentos(df),
-            help="Elige 'colombia' para un analisis nacional.",
+            help="Elige 'Colombia' para un análisis nacional.",
             key="pred_departamento",
         )
 
@@ -74,7 +74,7 @@ def render():
         with (col1 if not mo.requiere_municipio(departamento) else col2):
             mercado = st.selectbox("Mercado", mercados, key="pred_mercado")
     else:
-        st.info("Modo nacional: el producto se promediara entre todos los mercados del pais.", icon="🌎")
+        st.info("Modo nacional: el producto se promediará entre todos los mercados del país.", icon="🌎")
 
     productos = mo.opciones_productos(df, mercado)
     producto = st.selectbox("Producto", productos, key="pred_producto")
@@ -83,7 +83,7 @@ def render():
 
     df_hash = f"{df.shape[0]}_{df['fecha'].max().timestamp()}"
 
-    if st.button("Generar prediccion", type="primary"):
+    if st.button("Generar predicción", type="primary"):
         with st.spinner("Ejecutando el modelo... esto puede tardar un momento."):
             try:
                 y_temp = mo.preparar_serie(df, producto, mercado)
@@ -92,7 +92,7 @@ def render():
                     st.error(
                         f"La serie solo tiene **{n_obs} observaciones** "
                         f"de {y_temp.index[0]:%Y-%m} a {y_temp.index[-1]:%Y-%m}. "
-                        f"Se necesitan minimo 24 meses para modelar.",
+                        f"Se necesitan mínimo 24 meses para modelar.",
                         icon="⚠️",
                     )
                     return
@@ -106,24 +106,24 @@ def render():
 
     resultado = st.session_state.get("pred_resultado")
     if not resultado:
-        st.caption("Configura los parametros y presiona **Generar prediccion**.")
+        st.caption("Configura los parámetros y presiona **Generar predicción**.")
         return
 
     resumen = resultado["resumen"]
     forecast = resultado["forecast"]
 
-    st.subheader("Resultado del pronostico")
+    st.subheader("Resultado del pronóstico")
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Modelo ganador", resumen["ganador"])
     m2.metric("Accuracy (test)", f"{resumen['accuracy']:.1f}%")
     m3.metric(
-        f"Ultimo obs. ({resumen['ultima_fecha']})",
+        f"Último obs. ({resumen['ultima_fecha']})",
         f"${resumen['ultimo_observado']:,.0f}",
     )
     delta = resumen["pred_prox_mes"] - resumen["ultimo_observado"]
     m4.metric(
-        f"Pronostico {resumen['pred_prox_mes_fecha']}",
+        f"Pronóstico {resumen['pred_prox_mes_fecha']}",
         f"${resumen['pred_prox_mes']:,.0f}",
         delta=f"{delta:,.0f}",
     )
@@ -137,12 +137,12 @@ def render():
     tabla_usuario.index = tabla_usuario.index.strftime("%Y-%m")
     tabla_usuario.index.name = "Mes"
     tabla_usuario = tabla_usuario.rename(columns={
-        "Pronostico": "Pronostico ($/kg)",
+        "Pronostico": "Pronóstico ($/kg)",
         "Cambio_$": "Cambio $ vs mes anterior",
         "Cambio_%": "Cambio % vs mes anterior",
     })
 
-    st.caption(f"Pronostico de precios - proximos {mo.H_FUTURO} meses")
+    st.caption(f"Pronóstico de precios - próximos {mo.H_FUTURO} meses")
     st.dataframe(tabla_usuario, use_container_width=True)
 
     for fase in resultado["fases"]:

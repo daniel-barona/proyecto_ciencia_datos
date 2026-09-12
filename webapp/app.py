@@ -4,7 +4,7 @@ import streamlit as st
 from sections import introduccion, instrucciones, eda, prediccion
 
 # ----------------------------------------------------------------------
-# Configuracion general de la pagina
+# Configuración general de la página
 # ----------------------------------------------------------------------
 st.set_page_config(
     page_title="Modelo de Predicción SIPSA",
@@ -75,7 +75,7 @@ st.markdown(
 )
 
 # ----------------------------------------------------------------------
-# Estado de navegacion
+# Estado de navegación
 # ----------------------------------------------------------------------
 PAGINAS = {
     "Introducción": introduccion,
@@ -96,7 +96,7 @@ if "pagina_activa" not in st.session_state:
 
 
 # ----------------------------------------------------------------------
-# Sidebar / Menu de navegacion
+# Sidebar / Menú de navegación
 # ----------------------------------------------------------------------
 with st.sidebar:
     st.markdown('<div class="sidebar-header">📈 SIPSA</div>', unsafe_allow_html=True)
@@ -122,7 +122,7 @@ st.markdown(
 )
 st.markdown(
     '<p class="app-subtitle">Trabajo para el diplomado de ciencia de datos '
-    "- Daniel Andres Barona Sandoval</p>",
+    "- Daniel Andrés Barona Sandoval</p>",
     unsafe_allow_html=True,
 )
 
@@ -138,6 +138,6 @@ st.success(
 
 st.divider()
 # ----------------------------------------------------------------------
-# Render de la pagina seleccionada
+# Render de la página seleccionada
 # ----------------------------------------------------------------------
 PAGINAS[st.session_state.pagina_activa].render()

@@ -39,7 +39,7 @@ def render():
     )
     st.divider()
 
-    st.subheader("Modelos predictivos ultizados")
+    st.subheader("Modelos predictivos utilizados")
     st.markdown(
             """
                 - **ARIMA** : modelo de series temporales utilizado para representar la dependencia entre las observaciones actuales y los valores y errores pasados. Se emplea para series que no presentan un componente estacional explícito.

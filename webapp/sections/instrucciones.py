@@ -24,17 +24,17 @@ def render():
     st.subheader("Recomendaciones")
     with st.expander("📂 Sobre los datos"):
         st.write(
-            "Los datos provienen del SIPSA. las actualizaciones se realizan en tiempo real segun la plataforma "
+            "Los datos provienen del SIPSA. Las actualizaciones se realizan en tiempo real según la plataforma "
             "para obtener predicciones más confiables."
         )
     with st.expander("⚙️ Sobre los parámetros"):
         st.write(
-            "Puedes consultar un producto en el mercado mayorista de tu ciudad que se de tu interes "
+            "Puedes consultar un producto en el mercado mayorista de tu ciudad que sea de tu interés "
             "según tus necesidades de análisis."
         )
     with st.expander("📈 Sobre los resultados"):
         st.write(
-            "Los resultados son estimaciones basadas en datos históricos"
-            "se presentan en varios modelos, y se basa en el registro del SIPSA"
+            "Los resultados son estimaciones basadas en datos históricos "
+            "que se presentan en varios modelos, y se basan en el registro del SIPSA"
         )
 
