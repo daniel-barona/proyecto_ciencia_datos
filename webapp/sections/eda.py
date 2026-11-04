@@ -29,7 +29,12 @@ def render():
 
     st.header("SE REALIZA EL LLAMADO AL ARCHIVO Y VISUALIZACIÓN DE LOS DATOS")
     
+    # df = pd.read_excel(TRUSTED_DIR / "SIPSA_2013_2026_trusted.xlsx")
+
     df = pd.read_parquet(TRUSTED_DIR / "SIPSA_2013_2026_trusted.parquet")
+
+    # df = pd.read_csv(TRUSTED_DIR / "SIPSA_2013_2026_trusted.csv")
+
     st.write(df)
 
     st.text("Se observa la descripción del dataset")
